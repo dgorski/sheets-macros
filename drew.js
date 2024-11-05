@@ -7,38 +7,42 @@ function doPost(e) {
 
 // called by http interface
 function doGet(e) {
+  let apikey = undefined;
+  let userid = undefined;
+  let coins  = undefined;
+  let items  = undefined;
 
-  if(!e || !(typeof e == "object")) {
-    let msg = "Bad request: no data";
-    let result = { result: "error", message: msg };
+  // for producing JSON output
+  let content = ContentService.createTextOutput();
+  content.setMimeType(ContentService.MimeType.JSON);
 
+  // ** handle web service inputs ** //
+
+  try { apikey = e.parameters.apikey; } catch(e) { }
+
+  if(apikey !== "0f76f840fb699e61c5440e3e64419250") {
+    msg = "Bad request: api error";
     Logger.log(msg);
-    return ContentService.createTextOutput(JSON.stringify(result));
+    let result = { result: "error", message: msg };
+    return content.append(JSON.stringify(result));
   }
 
-  if(!e.hasOwnProperty("parameters") || !(typeof e.parameters == "object")) {
-    let msg = "Bad request: no data";
-    let result = { result: "error", message: msg };
+  try { userid = e.parameters.userid; } catch(e) { }
 
-    Logger.log(msg);
-    return ContentService.createTextOutput(JSON.stringify(result));
-  }
-
-  if(!e.parameters.hasOwnProperty("userid")) {
+  if(userid === undefined) {
     let msg = "Bad request: no user";
-    let result = { result: "error", message: msg };
-
     Logger.log(msg);
-    return ContentService.createTextOutput(JSON.stringify(result));
+    let result = { result: "error", message: msg };
+    return content.append(JSON.stringify(result));
+  } else {
+    userid = "" + userid;
   }
 
-  var userid = "" + e.parameters.userid;
+  // optional inputs
+  try { coins = e.parameters.coins; } catch(e) { }
+  try { items = e.parameters.items; } catch(e) { }
 
-  // if coins are specified - update the account.  Otherwise just fetch
-  var coins = undefined;
-  if(e.parameters.hasOwnProperty("coins")) {
-    coins = "" + e.parameters.coins;
-  }
+  // ** handle spreadsheet actions ** //
 
   // open the sheet
   var sheet = SpreadsheetApp.openById(sheetid).getSheets()[0];
@@ -50,34 +54,30 @@ function doGet(e) {
   var match = range.createTextFinder(userid).matchEntireCell(true).findNext();
 
   if(match) {
-    var u = match.getValue()
     var r = match.getRow();
-
-    Logger.log("found user id: " + u + " on row " + r);
-
     var bank = sheet.getRange(r, 2); // second column of the row containing the userid
+    var chest = sheet.getRange(r, 3); // third column stores items
 
     if(coins !== undefined) {
-      bank.setValue(coins);
+      bank.setValue(coins);    // set
     } else {
-      coins = bank.getValue();
+      coins = bank.getValue(); // get
     }
 
-    Logger.log("user coins: " + coins);
+    if(items !== undefined) {
+      chest.setValue(items);    // set
+    } else {
+      items = chest.getValue(); // get
+    }
 
-    let result = { result: "success", coins: coins };
-
-    Logger.log("result: " + JSON.stringify(result));
-    return ContentService.createTextOutput(JSON.stringify(result));
   } else {
-    // a new user
     if(coins === undefined) {
       coins = "0";
     }
     sheet.appendRow([userid, coins]);
-    Logger.log("added user: " + userid);
-    let result = { result: "success", coins: coins };
-    return ContentService.createTextOutput(JSON.stringify(result));
   }
 
+  let result = { result: "success", coins: coins, items: items };
+  Logger.log(JSON.stringify(result));
+  return content.append(JSON.stringify(result));
 }
