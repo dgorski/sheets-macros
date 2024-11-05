@@ -1,6 +1,9 @@
 
-// https://docs.google.com/spreadsheets/d/1MUTlvo1D6GIPn04j45LiMSOWBVGu9WHXEzEbrdJL3-w/edit?gid=0#gid=0
 const sheetid = '1MUTlvo1D6GIPn04j45LiMSOWBVGu9WHXEzEbrdJL3-w';
+
+function doPost(e) {
+  return doGet(e);
+}
 
 // called by http interface
 function doGet(e) {
@@ -29,12 +32,12 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify(result));
   }
 
-  var userid = e.parameters.userid;
+  var userid = "" + e.parameters.userid;
 
   // if coins are specified - update the account.  Otherwise just fetch
   var coins = undefined;
   if(e.parameters.hasOwnProperty("coins")) {
-    coins = e.parameters.coins;
+    coins = "" + e.parameters.coins;
   }
 
   // open the sheet
@@ -63,12 +66,17 @@ function doGet(e) {
     Logger.log("user coins: " + coins);
 
     let result = { result: "success", coins: coins };
+
+    Logger.log("result: " + JSON.stringify(result));
     return ContentService.createTextOutput(JSON.stringify(result));
   } else {
-    let msg = "Bad request: no such user";
-    Logger.log(msg);
-
-    let result = { result: "error", message: msg };
+    // a new user
+    if(coins === undefined) {
+      coins = "0";
+    }
+    sheet.appendRow([userid, coins]);
+    Logger.log("added user: " + userid);
+    let result = { result: "success", coins: coins };
     return ContentService.createTextOutput(JSON.stringify(result));
   }
 
