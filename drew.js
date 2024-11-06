@@ -5,79 +5,109 @@ function doPost(e) {
   return doGet(e);
 }
 
+function jsonError(msg) {
+  let json = JSON.stringify({ result: "error", message: msg });
+  let type = ContentService.MimeType.JSON;
+
+  Logger.log("Error: " + msg);
+  return ContentService.createTextOutput(json).setMimeType(type);
+}
+
+function jsonResult(res) {
+  res["result"] = "success";
+  delete res["apikey"];
+  let json = JSON.stringify(res);
+  let type = ContentService.MimeType.JSON;
+
+  Logger.log("Success: " + json);
+  return ContentService.createTextOutput(json).setMimeType(type);
+}
+
 // called by http interface
-function doGet(e) {
-  let apikey = undefined;
-  let userid = undefined;
-  let coins  = undefined;
-  let items  = undefined;
+function doGet(request) {
 
-  // for producing JSON output
-  let content = ContentService.createTextOutput();
-  content.setMimeType(ContentService.MimeType.JSON);
+  // ** handle web request ** //
 
-  // ** handle web service inputs ** //
+  Logger.log("doGet with params: " + JSON.stringify(request));
 
-  try { apikey = e.parameters.apikey; } catch(e) { }
+  let args = undefined;
 
-  if(apikey !== "0f76f840fb699e61c5440e3e64419250") {
-    msg = "Bad request: api error";
-    Logger.log(msg);
-    let result = { result: "error", message: msg };
-    return content.append(JSON.stringify(result));
+  // should not fail, doGet/doPost should get args in every case
+  try { args = request.parameter; } catch(ex) { }
+
+  if(args === undefined) {
+    return jsonError("Bad request: input error");
   }
 
-  try { userid = e.parameters.userid; } catch(e) { }
-
-  if(userid === undefined) {
-    let msg = "Bad request: no user";
-    Logger.log(msg);
-    let result = { result: "error", message: msg };
-    return content.append(JSON.stringify(result));
-  } else {
-    userid = "" + userid;
+  if(args["apikey"] !== "0f76f840fb699e61c5440e3e64419250") {
+    return jsonError("Bad request: api error");
   }
 
-  // optional inputs
-  try { coins = e.parameters.coins; } catch(e) { }
-  try { items = e.parameters.items; } catch(e) { }
+  if(args["userid"] === undefined) {
+    return jsonError("Bad request: no user specified");
+  }
+
 
   // ** handle spreadsheet actions ** //
 
-  // open the sheet
+  // open the workbook, get first sheet
   var sheet = SpreadsheetApp.openById(sheetid).getSheets()[0];
 
-  // get the first column only
-  var range = sheet.getRange("A:A");
+  // get a range containing the first column only
+  var firstCol = sheet.getRange("A:A");
 
   // search the first column for a full match on the userid
-  var match = range.createTextFinder(userid).matchEntireCell(true).findNext();
+  var match = firstCol.createTextFinder(args["userid"]).matchEntireCell(true).findNext();
 
-  if(match) {
-    var r = match.getRow();
-    var bank = sheet.getRange(r, 2); // second column of the row containing the userid
-    var chest = sheet.getRange(r, 3); // third column stores items
 
-    if(coins !== undefined) {
-      bank.setValue(coins);    // set
+  // ** handle user data ** //
+
+  if(match) { // existing user found
+
+    var row = match.getRow();
+    var coins = sheet.getRange(row, 2); // second column of the row containing the userid
+    var items = sheet.getRange(row, 3); // third column stores items
+    var eula =  sheet.getRange(row, 4); // fourth column stores EULA agreement
+
+    if(args["eula"] !== undefined) {
+      eula.setValue(args["eula"]);    // set
     } else {
-      coins = bank.getValue(); // get
+      args["eula"] = eula.getValue(); // get
     }
 
-    if(items !== undefined) {
-      chest.setValue(items);    // set
+    if(args["eula"] !== "Y") {
+      return jsonError("Bad request: user has not agreed to EULA");
+    }
+
+    if(args["coins"] !== undefined) {
+      coins.setValue(args["coins"]);    // set
     } else {
-      items = chest.getValue(); // get
+      args["coins"] = coins.getValue(); // get
     }
 
-  } else {
-    if(coins === undefined) {
-      coins = "0";
+    if(args["items"] !== undefined) {
+      items.setValue(JSON.stringify(args["items"]));    // set
+    } else {
+      args["items"] = JSON.parse(items.getValue()); // get
     }
-    sheet.appendRow([userid, coins]);
+
+  } else { // not found: new user
+
+    if(args["eula"] !== "Y") {
+      return jsonError("Bad request: user has not agreed to EULA");
+    }
+
+    if(args["coins"] === undefined) {
+      args["coins"] = "0";
+    }
+    if(args["items"] === undefined) {
+      args["items"] = "null";
+    }
+
+    sheet.appendRow([
+      args["userid"], args["coins"], args["items"], args["eula"]
+    ]);
   }
 
-  let result = { result: "success", coins: coins, items: items };
-  Logger.log(JSON.stringify(result));
-  return content.append(JSON.stringify(result));
+  return jsonResult(args);
 }
